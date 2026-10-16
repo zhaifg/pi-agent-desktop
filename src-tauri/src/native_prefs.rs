@@ -61,30 +61,27 @@ fn remove_counting(path: &Path) -> u64 {
 /// reached from here.
 fn clear_runtime_caches(app: &AppHandle) -> u64 {
     let mut freed = 0;
-    // macOS ~/Library/Caches/<id> (WebKit network cache), Linux ~/.cache/<id>,
-    // Windows %LOCALAPPDATA%\<id>.
-    if let Ok(cache_dir) = app.path().app_cache_dir() {
-        for entry in fs::read_dir(&cache_dir).into_iter().flatten().flatten() {
-            freed += remove_counting(&entry.path());
-        }
+    // The webview's own data and cache directories, both under the data root
+    // rather than the user profile.
+    let cache_dir = crate::native_paths::cache_dir(app);
+    for entry in fs::read_dir(&cache_dir).into_iter().flatten().flatten() {
+        freed += remove_counting(&entry.path());
     }
     // Linux WebKitGTK keeps its HTTP cache beside the app data.
     #[cfg(target_os = "linux")]
-    if let Ok(data_dir) = app.path().app_data_dir() {
-        freed += remove_counting(&data_dir.join("WebKitCache"));
+    {
+        freed += remove_counting(&cache_dir.join("WebKitCache"));
     }
     // Windows WebView2: cache folders inside each profile, never the profile
     // itself (it holds localStorage and cookies).
     #[cfg(target_os = "windows")]
-    if let Ok(data_dir) = app.path().app_data_dir() {
-        for profile in fs::read_dir(data_dir.join("EBWebView"))
-            .into_iter()
-            .flatten()
-            .flatten()
-        {
-            for name in ["Cache", "Code Cache", "GPUCache"] {
-                freed += remove_counting(&profile.path().join(name));
-            }
+    for profile in fs::read_dir(cache_dir.join("EBWebView"))
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        for name in ["Cache", "Code Cache", "GPUCache"] {
+            freed += remove_counting(&profile.path().join(name));
         }
     }
     freed
@@ -99,11 +96,7 @@ pub async fn clear_app_cache(app: AppHandle) -> Result<u64, String> {
 }
 
 fn ui_prefs_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|error| error.to_string())?;
-    Ok(dir.join("ui-prefs.json"))
+    Ok(crate::native_paths::config_dir(app).join("ui-prefs.json"))
 }
 
 fn normalize_theme(theme: &str) -> Option<&'static str> {
@@ -138,11 +131,7 @@ const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Path to a small JSON file recording the version that last ran successfully.
 fn last_version_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|error| error.to_string())?;
-    Ok(dir.join("last-version.json"))
+    Ok(crate::native_paths::config_dir(app).join("last-version.json"))
 }
 
 fn read_last_version(app: &AppHandle) -> Option<String> {
@@ -176,39 +165,45 @@ pub fn write_last_version(app: &AppHandle) {
 /// Only the cache directories are touched — `localStorage`, sessions, and
 /// user settings live elsewhere and are preserved.
 fn clear_webview_caches(app: &AppHandle) {
-    // Linux WebKitGTK: ~/.local/share/<identifier>/WebKitCache
-    #[cfg(target_os = "linux")]
-    if let Ok(data_dir) = app.path().app_data_dir() {
-        let webkit_cache = data_dir.join("WebKitCache");
-        if webkit_cache.is_dir() {
-            let _ = fs::remove_dir_all(&webkit_cache);
+    // Linux WebKitGTK and Windows WebView2 both keep their caches under the data
+    // root's cache directory now, so one path serves both.
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    {
+        let cache_root = crate::native_paths::cache_dir(app);
+        // Linux WebKitGTK: <cache>/WebKitCache
+        #[cfg(target_os = "linux")]
+        {
+            let webkit_cache = cache_root.join("WebKitCache");
+            if webkit_cache.is_dir() {
+                let _ = fs::remove_dir_all(&webkit_cache);
+            }
         }
-    }
-    // Windows WebView2: cache partition under the app data dir.
-    #[cfg(target_os = "windows")]
-    if let Ok(data_dir) = app.path().app_data_dir() {
-        let webview2 = data_dir.join("EBWebView");
-        if webview2.is_dir() {
-            for entry in fs::read_dir(&webview2).into_iter().flatten().flatten() {
-                let cache_dir = entry.path().join("Cache");
-                if cache_dir.is_dir() {
-                    let _ = fs::remove_dir_all(&cache_dir);
+        // Windows WebView2: cache partition under the cache directory.
+        #[cfg(target_os = "windows")]
+        {
+            let webview2 = cache_root.join("EBWebView");
+            if webview2.is_dir() {
+                for entry in fs::read_dir(&webview2).into_iter().flatten().flatten() {
+                    let cache_dir = entry.path().join("Cache");
+                    if cache_dir.is_dir() {
+                        let _ = fs::remove_dir_all(&cache_dir);
+                    }
                 }
             }
         }
     }
-    // macOS WKWebView: per-origin caches under ~/Library/WebKit/<identifier>.
+    // macOS WKWebView keeps per-origin caches in a fixed OS location keyed by
+    // bundle id, not under the app's own directories, so there is nothing to
+    // redirect here — this is a legacy cache cleanup, not a write path.
     #[cfg(target_os = "macos")]
-    if let Ok(config_dir) = app.path().app_config_dir() {
-        // app_config_dir on macOS is ~/Library/Application Support/<identifier>;
-        // WKWebView WebsiteKit caches live under ~/Library/WebKit/<bundle-id>.
+    {
+        let _ = app;
         if let Some(home) = dirs_home_dir() {
             let wk = home.join("Library/WebKit/com.abcwyc.pi-agent");
             if wk.is_dir() {
                 let _ = fs::remove_dir_all(&wk);
             }
         }
-        let _ = config_dir; // suppress unused on non-mac
     }
 }
 

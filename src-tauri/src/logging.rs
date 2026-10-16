@@ -6,7 +6,7 @@ use std::{
     thread,
 };
 
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 const DESKTOP_LOG_MAX_BYTES: u64 = 256 * 1024;
 static DESKTOP_LOG_DIR: OnceLock<PathBuf> = OnceLock::new();
@@ -60,9 +60,7 @@ pub fn append_desktop_log(dir: &Path, message: &str) {
 /// a hang during a popup, a panic, or an unexpected exit leaves its last step
 /// on disk.
 pub fn desktop_log(app: &AppHandle, message: &str) {
-    let Ok(dir) = app.path().app_log_dir() else {
-        return;
-    };
+    let dir = crate::native_paths::logs_dir(app);
     let _ = DESKTOP_LOG_DIR.set(dir.clone());
     append_desktop_log(&dir, message);
 }

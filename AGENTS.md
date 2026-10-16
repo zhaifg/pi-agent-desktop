@@ -12,6 +12,19 @@ Typecheck: `node_modules/.bin/tsc --noEmit` · Lint: `npm run lint`
 
 ---
 
+## Data directory
+
+**Every read/write path resolves under one data root — never add a new
+`homedir()` or `app.path().app_*_dir()` read or write path.** The installed app
+keeps it at `<install dir>\data` (`C:\Program Files\Pi Agent\data` by default); a
+development checkout keeps it at `<repo>/data`, which is gitignored. pi's agent
+directory (sessions, credentials, models, MCP config) is `<data root>/agent` and
+reaches the server as `PI_CODING_AGENT_DIR`; the data root itself reaches it as
+`PI_AGENT_HOME`. Full layout, env-var precedence, and the NSIS ACL requirement:
+[docs/desktop-data-dir.md](docs/desktop-data-dir.md).
+
+---
+
 ## Local environment traps
 
 - **Building (or starting a fresh `next dev`) from inside the Pi desktop app's shell

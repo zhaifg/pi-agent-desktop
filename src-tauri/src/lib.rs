@@ -18,6 +18,7 @@ use std::os::windows::process::CommandExt as _;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, Url};
 
 mod logging;
+mod native_paths;
 mod native_prefs;
 mod shell;
 
@@ -178,10 +179,7 @@ fn open_path(path: String) -> Result<(), String> {
 /// cannot be turned into a general "open anything" primitive.
 #[tauri::command]
 fn open_log_dir(app: AppHandle) -> Result<(), String> {
-    let dir = app
-        .path()
-        .app_log_dir()
-        .map_err(|error| error.to_string())?;
+    let dir = native_paths::logs_dir(&app);
     fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
     open_path_with_default_app(&dir)
 }
@@ -612,7 +610,17 @@ fn start_packaged_server(
         .into());
     }
 
-    let log_dir = app.path().app_log_dir()?;
+    // Everything the app and pi write lives under one data root beside the
+    // installed program; create it before the server needs it and hand the server
+    // both env vars, since the SDK resolves pi's own directory from
+    // PI_CODING_AGENT_DIR while the fork's userHome() reads PI_AGENT_HOME.
+    let data_root = native_paths::ensure_data_dirs(app)?;
+    desktop_log(
+        app,
+        &format!("data root: {}", data_root.display()),
+    );
+
+    let log_dir = native_paths::logs_dir(app);
     fs::create_dir_all(&log_dir)?;
     let log_path = log_dir.join("server.log");
     let stdout = OpenOptions::new()
@@ -630,6 +638,8 @@ fn start_packaged_server(
         .env("PORT", port.to_string())
         .env("NODE_ENV", "production")
         .env("NEXT_TELEMETRY_DISABLED", "1")
+        .env("PI_AGENT_HOME", &data_root)
+        .env("PI_CODING_AGENT_DIR", native_paths::agent_dir(app))
         .env("PI_WEB_PARENT_PID", std::process::id().to_string())
         .env(DESKTOP_API_TOKEN_ENV, desktop_api_token)
         .env(DESKTOP_INSTANCE_ID_ENV, desktop_instance_id)

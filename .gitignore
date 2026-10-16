@@ -59,6 +59,8 @@ next-env.d.ts
 
 # pi agent local state
 /.pi/
+# the app's data root (pi agent dir, logs, prefs, webview cache) for a checkout
+/data/
 
 # local tooling artifacts
 .playwright-mcp/

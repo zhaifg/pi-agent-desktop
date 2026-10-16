@@ -50,6 +50,10 @@ pub fn build_window(app: &tauri::AppHandle, app_url: Url) -> tauri::Result<Webvi
         .inner_size(1440.0, 900.0)
         .min_inner_size(900.0, 600.0)
         .resizable(true)
+        // WebView2/WebKit would otherwise keep their profile under
+        // %LOCALAPPDATA%\<identifier>; point it at the data root beside the
+        // installed program, the same place the rest of the app writes.
+        .data_directory(crate::native_paths::cache_dir(app))
         // Pi Agent already handles browser drag/drop for image attachments.
         .disable_drag_drop_handler()
         .on_navigation(move |url| {
