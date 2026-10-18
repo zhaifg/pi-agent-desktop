@@ -22,6 +22,9 @@
 # production
 /build
 
+# assembled portable Windows build (`npm run desktop:portable`)
+/dist/
+
 # misc
 .DS_Store
 *.pem
